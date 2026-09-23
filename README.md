@@ -85,3 +85,30 @@ Dans le code
 - route /big : `existsSync` + `readFileSync` = bloquant, et tout le fichier est charge en memoire
 - un console.log a chaque requete
 - pas de gestion du SIGTERM
+
+
+## Etape 1 : .dockerignore + suppression du COPY node_modules
+
+- creation du fichier .dockerignore (node_modules, .git, README, Dockerfile...)
+- suppression de la ligne `COPY node_modules ./node_modules` : les modules sont installes dans le conteneur par npm install, pas besoin de ceux de Windows
+- j'ai aussi renomme `dockerfile` en `Dockerfile` (nom standard)
+
+resultat :
+
+```
+PS> docker images tp2
+REPOSITORY   TAG             SIZE
+tp2          1-dockerignore  1.89GB
+tp2          0-baseline      1.88GB
+```
+
+| mesure | etape 0 | etape 1 |
+|---|---|---|
+| taille image | 1.88 GB | 1.89 GB |
+| couche COPY du code | 307 kB (+14.2 MB node_modules) | 65.5 kB |
+| couche npm install | 7.47 MB | 25.6 MB |
+| nb de couches | 20 | 19 |
+| build sans cache | 21.2 s | 15.8 s |
+| rebuild apres modif de server.js | 21.3 s | 15.0 s |
+
+Remarque : l'image a pas diminue, elle a meme pris 6 MB. Avant, npm install trouvait deja les modules copies et faisait presque rien. Maintenant il installe tout et laisse son cache (/root/.npm) dans la couche. Par contre le contexte envoye a docker est beaucoup plus petit et le build est plus rapide (-5 s). Le gros du poids c'est l'image node:latest, c'est l'etape suivante.
