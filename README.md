@@ -169,3 +169,35 @@ resultat :
 | rebuild apres modif de server.js | 62.6 s | 5.2 s |
 
 L'appli marche toujours pareil (http://localhost:3000 ok). Depuis le debut on est passe de 1.88 GB a 362 MB (-81 %).
+
+
+## Etape 4 : ordre des couches (cache) + npm ci --omit=dev
+
+- on copie d'abord seulement package.json et package-lock.json, on installe, et apres on copie server.js. Comme ca si je modifie juste le code, docker reutilise la couche des dependances
+- `npm ci` au lieu de `npm install` : installe exactement les versions du package-lock (build reproductible)
+- `--omit=dev` : nodemon est plus installe dans l'image
+- `npm cache clean --force` dans le meme RUN pour pas garder le cache npm dans la couche
+- on copie seulement server.js au lieu de `COPY . /app`
+
+```dockerfile
+FROM node:24-slim
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+COPY server.js ./
+EXPOSE 3000
+ENV NODE_ENV=production
+USER root
+CMD ["node", "server.js"]
+```
+
+resultat :
+
+| mesure | etape 3 | etape 4 |
+|---|---|---|
+| taille image | 362 MB | 349 MB |
+| couche des dependances | 25.6 MB | 16.6 MB |
+| build sans cache | 6.9 s | 4.7 s |
+| rebuild apres modif de server.js | 5.2 s | 1.3 s |
+
+Le rebuild apres une modif du code passe de 5.2 s a 1.3 s, dans le log on voit `CACHED [3/4] RUN npm ci ...`. C'est surtout ca le gain de cette etape, au quotidien quand on developpe.
