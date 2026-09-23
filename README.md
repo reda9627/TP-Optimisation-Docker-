@@ -348,3 +348,58 @@ Up 8 seconds (healthy)
 | rebuild apres modif de server.js | 1.1 s | 1.1 s |
 
 Le build sans cache est un peu plus long (2 images de base + apk add) mais le rebuild normal reste a 1.1 s grace au cache. Le binaire node fait a lui seul 131 MB, on pourra pas vraiment descendre beaucoup plus bas avec node.
+
+
+## Recap
+
+```
+PS> docker images tp2
+REPOSITORY   TAG             SIZE
+tp2          8-multistage    202MB
+tp2          7-securite      250MB
+tp2          6-alpine        250MB
+tp2          5-code          338MB
+tp2          4-cache         349MB
+tp2          3-nettoyage     362MB
+tp2          2-slim          922MB
+tp2          1-dockerignore  1.89GB
+tp2          0-baseline      1.88GB
+```
+
+| etape | changement | taille | build sans cache | rebuild (modif code) | user | docker stop |
+|---|---|---|---|---|---|---|
+| 0 | baseline | 1.88 GB | 21.2 s | 21.3 s | root | 3.6 s |
+| 1 | .dockerignore | 1.89 GB | 15.8 s | 15.0 s | root | 3.7 s |
+| 2 | node:24-slim | 922 MB | 61.5 s | 62.6 s | root | 3.7 s |
+| 3 | suppression apt-get / build / ports | 362 MB | 6.9 s | 5.2 s | root | 3.7 s |
+| 4 | cache des couches + npm ci --omit=dev | 349 MB | 4.7 s | 1.3 s | root | 3.7 s |
+| 5 | suppression mongodb + code | 338 MB | 3.4 s | 1.2 s | root | 0.5 s |
+| 6 | node:24-alpine | 250 MB | 4.2 s | 1.2 s | root | 0.5 s |
+| 7 | non root + healthcheck | 250 MB | 3.9 s | 1.1 s | node | 0.5 s |
+| 8 | multi-stage | 202 MB | 10.6 s | 1.1 s | app | 0.6 s |
+
+Test de charge (autocannon, 50 connexions pendant 10 s sur /) :
+
+```
+npx autocannon -c 50 -d 10 http://localhost:3000/
+```
+
+| | baseline | final |
+|---|---|---|
+| requetes / s (moyenne) | 6 295 | 8 354 |
+| latence moyenne | 7.44 ms | 5.49 ms |
+| total en 10 s | 63k | 84k |
+| RAM pendant le test | 41.6 MiB | 36.4 MiB |
+
+Environ +33 % de requetes par seconde, surtout grace au console.log retire en prod et a NODE_ENV=production.
+
+
+## Conclusion
+
+- taille : 1.88 GB -> 202 MB, soit -89 %
+- rebuild apres une modif du code : 21.3 s -> 1.1 s
+- docker stop : 3.6 s -> 0.6 s (gestion du SIGTERM)
+- l'appli tourne plus en root et docker surveille son etat avec le healthcheck
+- versions fixees (node:24, alpine:3.24, npm ci avec le package-lock) donc le build est reproductible
+
+Les etapes qui ont le plus fait gagner en taille c'est le changement d'image de base et la suppression du apt-get. L'ordre des couches lui fait surtout gagner du temps au quotidien.
