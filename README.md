@@ -231,3 +231,21 @@ resultat :
 | docker stop | 3.7 s | 0.5 s |
 
 Les dependances sont divisees par 2 en retirant mongodb. Et le docker stop est quasi instantane maintenant que le serveur gere SIGTERM.
+
+
+## Etape 6 : passage a node:24-alpine
+
+Maintenant qu'il y a plus d'apt-get dans le Dockerfile, on peut passer sur alpine (distribution linux minimale, utilise apk et musl au lieu de glibc). Pour express ca pose aucun probleme vu qu'il y a pas de module natif.
+
+- `FROM node:24-slim` -> `FROM node:24-alpine`
+
+resultat :
+
+| mesure | etape 5 | etape 6 |
+|---|---|---|
+| taille image | 338 MB | 250 MB |
+| build sans cache | 3.4 s | 4.2 s |
+| rebuild apres modif de server.js | 1.2 s | 1.2 s |
+| RAM | 21.1 MiB | 21.4 MiB |
+
+-88 MB juste en changeant l'image de base. La RAM et le demarrage bougent pas, c'est normal c'est le meme node.
