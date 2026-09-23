@@ -137,3 +137,35 @@ resultat :
 | rebuild apres modif de server.js | 15.0 s | 62.6 s |
 
 L'image est divisee par 2 mais le build est 4 fois plus long. En fait node:latest contenait deja build-essential donc l'apt-get faisait presque rien, alors que sur slim il doit tout telecharger et installer (418 MB). Ca montre bien que cette ligne apt-get sert a rien pour notre appli -> etape suivante.
+
+
+## Etape 3 : on enleve ce qui sert a rien
+
+- suppression du `RUN apt-get ... build-essential ca-certificates locales` : aucune dependance native a compiler (express), et les locales sont pas utilisees
+- suppression de `RUN npm run build` : le script build fait juste `echo "build step "`
+- `EXPOSE 3000` seulement (server.js ecoute que sur PORT=3000)
+- `NODE_ENV=production` au lieu de development (express active son cache et affiche moins de details dans les erreurs)
+
+Dockerfile a cette etape :
+
+```dockerfile
+FROM node:24-slim
+WORKDIR /app
+COPY . /app
+RUN npm install
+EXPOSE 3000
+ENV NODE_ENV=production
+USER root
+CMD ["node", "server.js"]
+```
+
+resultat :
+
+| mesure | etape 2 | etape 3 |
+|---|---|---|
+| taille image | 922 MB | 362 MB |
+| nb de couches | 18 | 16 |
+| build sans cache | 61.5 s | 6.9 s |
+| rebuild apres modif de server.js | 62.6 s | 5.2 s |
+
+L'appli marche toujours pareil (http://localhost:3000 ok). Depuis le debut on est passe de 1.88 GB a 362 MB (-81 %).
