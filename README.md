@@ -112,3 +112,28 @@ tp2          0-baseline      1.88GB
 | rebuild apres modif de server.js | 21.3 s | 15.0 s |
 
 Remarque : l'image a pas diminue, elle a meme pris 6 MB. Avant, npm install trouvait deja les modules copies et faisait presque rien. Maintenant il installe tout et laisse son cache (/root/.npm) dans la couche. Par contre le contexte envoye a docker est beaucoup plus petit et le build est plus rapide (-5 s). Le gros du poids c'est l'image node:latest, c'est l'etape suivante.
+
+
+## Etape 2 : image de base node:24-slim
+
+- `FROM node:latest` remplace par `FROM node:24-slim` : version fixee (24 = LTS) et variante slim (debian allegee)
+- je garde debian pour l'instant parce que le Dockerfile fait encore un apt-get
+
+taille des images de base (docker images) :
+
+```
+node:latest      1.8GB
+node:24-slim     332MB
+node:24-alpine   242MB
+```
+
+resultat :
+
+| mesure | etape 1 | etape 2 |
+|---|---|---|
+| taille image | 1.89 GB | 922 MB |
+| couche apt-get | 50.1 MB | 418 MB |
+| build sans cache | 15.8 s | 61.5 s |
+| rebuild apres modif de server.js | 15.0 s | 62.6 s |
+
+L'image est divisee par 2 mais le build est 4 fois plus long. En fait node:latest contenait deja build-essential donc l'apt-get faisait presque rien, alors que sur slim il doit tout telecharger et installer (418 MB). Ca montre bien que cette ligne apt-get sert a rien pour notre appli -> etape suivante.
