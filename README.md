@@ -288,3 +288,63 @@ Up 8 seconds (healthy)
 | healthcheck | non | oui (healthy) |
 
 Pas de changement de taille ici, c'est une etape securite.
+
+
+## Etape 8 : build multi-stage
+
+L'image node:24-alpine contient npm, npx, yarn, corepack... qui servent a installer les dependances mais pas a lancer l'appli. Avec un multi-stage :
+- stage `build` : node:24-alpine, on fait le npm ci
+- stage final : alpine:3.24 (meme version que celle utilisee par node:24-alpine) + libstdc++ (necessaire pour node, vu avec `ldd /usr/local/bin/node`), on copie juste le binaire node, le node_modules et server.js
+- l'utilisateur node existe pas dans alpine de base donc je cree un utilisateur `app`
+
+Dockerfile final :
+
+```dockerfile
+# ---- etape 1 : installation des dependances ----
+FROM node:24-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+# ---- etape 2 : image finale (juste node, sans npm ni yarn) ----
+FROM alpine:3.24
+RUN apk add --no-cache libstdc++ \
+    && addgroup -S app && adduser -S app -G app
+COPY --from=build /usr/local/bin/node /usr/local/bin/node
+WORKDIR /app
+COPY --from=build --chown=app:app /app/node_modules ./node_modules
+COPY --chown=app:app package.json server.js ./
+ENV NODE_ENV=production
+EXPOSE 3000
+USER app
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s CMD wget -qO- http://localhost:3000/health || exit 1
+CMD ["node", "server.js"]
+```
+
+`docker history tp2:8-multistage` :
+
+```
+16.4kB   COPY package.json server.js
+4.58MB   COPY /app/node_modules
+131MB    COPY /usr/local/bin/node
+3.09MB   RUN apk add --no-cache libstdc++ ...
+9.08MB   alpine 3.24
+```
+
+verif :
+
+```
+PS> docker exec hc sh -c "which npm || echo npm absent"
+npm absent
+PS> docker ps
+Up 8 seconds (healthy)
+```
+
+| mesure | etape 7 | etape 8 |
+|---|---|---|
+| taille image | 250 MB | 202 MB |
+| nb de couches | 18 | 12 |
+| build sans cache | 3.9 s | 10.6 s |
+| rebuild apres modif de server.js | 1.1 s | 1.1 s |
+
+Le build sans cache est un peu plus long (2 images de base + apk add) mais le rebuild normal reste a 1.1 s grace au cache. Le binaire node fait a lui seul 131 MB, on pourra pas vraiment descendre beaucoup plus bas avec node.
