@@ -249,3 +249,42 @@ resultat :
 | RAM | 21.1 MiB | 21.4 MiB |
 
 -88 MB juste en changeant l'image de base. La RAM et le demarrage bougent pas, c'est normal c'est le meme node.
+
+
+## Etape 7 : securite (utilisateur non root + healthcheck)
+
+- `USER root` -> `USER node` : l'image node officielle a deja un utilisateur `node` sans droits admin. Si quelqu'un exploite une faille dans l'appli il est pas root dans le conteneur
+- `COPY --chown=node:node` pour que le code appartienne a cet utilisateur
+- `HEALTHCHECK` qui appelle /health avec wget (dispo dans alpine), docker sait si l'appli repond vraiment
+
+```dockerfile
+FROM node:24-alpine
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+COPY --chown=node:node server.js ./
+ENV NODE_ENV=production
+EXPOSE 3000
+USER node
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s CMD wget -qO- http://localhost:3000/health || exit 1
+CMD ["node", "server.js"]
+```
+
+resultat :
+
+```
+PS> docker exec test whoami
+node
+
+PS> docker ps
+STATUS
+Up 8 seconds (healthy)
+```
+
+| mesure | etape 6 | etape 7 |
+|---|---|---|
+| taille image | 250 MB | 250 MB |
+| utilisateur | root | node |
+| healthcheck | non | oui (healthy) |
+
+Pas de changement de taille ici, c'est une etape securite.
