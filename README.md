@@ -201,3 +201,33 @@ resultat :
 | rebuild apres modif de server.js | 5.2 s | 1.3 s |
 
 Le rebuild apres une modif du code passe de 5.2 s a 1.3 s, dans le log on voit `CACHED [3/4] RUN npm ci ...`. C'est surtout ca le gain de cette etape, au quotidien quand on developpe.
+
+
+## Etape 5 : nettoyage des dependances et du code
+
+- `npm uninstall mongodb` : le module etait installe mais jamais utilise dans server.js (et il ramene bson, whatwg-url, etc.)
+- server.js :
+    * le middleware qui fait un console.log a chaque requete est active seulement si NODE_ENV != production
+    * route /big : `fs.createReadStream` au lieu de `existsSync` + `readFileSync`. Le fichier est lu par morceaux sans bloquer le serveur et sans tout charger en memoire
+    * ajout d'une route /health (utilisee a l'etape du healthcheck)
+    * gestion du signal SIGTERM : le serveur se ferme proprement quand on fait docker stop
+
+test en local avant de builder :
+
+```
+PS> curl http://localhost:3000/big      -> Fichier introuvable
+(avec un fichier maybe-big-file.txt "a\nb")
+PS> curl http://localhost:3000/big      -> a<br/>b<br/>
+PS> curl http://localhost:3000/health   -> 200
+```
+
+resultat :
+
+| mesure | etape 4 | etape 5 |
+|---|---|---|
+| taille image | 349 MB | 338 MB |
+| couche des dependances | 16.6 MB | 7.33 MB |
+| build sans cache | 4.7 s | 3.4 s |
+| docker stop | 3.7 s | 0.5 s |
+
+Les dependances sont divisees par 2 en retirant mongodb. Et le docker stop est quasi instantane maintenant que le serveur gere SIGTERM.
